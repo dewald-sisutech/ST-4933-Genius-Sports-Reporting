@@ -33,15 +33,17 @@ match_mapping AS (
 
 --PRE-FILTER LIVE-BET
     sportsbook_data_v4 AS (SELECT *
-                           FROM sisu_sportsbook.sportsbook_data_v3
-                           WHERE selection_product = 'live_bet' AND
-                                 bonus_wallet_id IS NOT NULL AND
-                                 resulted_date between '2024-06-01' and '2024-07-01'),
-
+                                    FROM sisu_sportsbook.sportsbook_data_v3
+                                    WHERE selection_product = 'live_bet'
+                                    AND bonus_wallet_id IS NOT NULL
+                                    AND resulted_date BETWEEN
+                                        DATE_SUB(DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH), MONTH), INTERVAL 0 DAY) AND
+                                        LAST_DAY(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH))
+),
 
 --ATTACH ADDITIONAL GENIUS MAPPING REPORT DATA
     final as (
-    SELECT sb.sport_name                                                 AS                       sport,
+    SELECT sb.sport_name                                                           AS                       sport,
                      sm.provider_entity_id                                         AS                       sport_id,
                      sb.league_name                                                AS                       competition,
                      lm.provider_entity_id                                         AS                       competition_id,

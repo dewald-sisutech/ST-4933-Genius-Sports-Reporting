@@ -2,8 +2,9 @@ WITH
 
     final_2 as (
 
-        SELECT * FROM sisu_revenue.genius_report_raw_data where fixture_date between '2024-06-01' and '2024-06-30'
-     ),
+        SELECT * FROM sisu_revenue.genius_report_raw_data where cast(fixture_date as date) BETWEEN
+                                        DATE_SUB(DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH), MONTH), INTERVAL 0 DAY) AND
+                                        LAST_DAY(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH))),
 
 
 f3 as (
