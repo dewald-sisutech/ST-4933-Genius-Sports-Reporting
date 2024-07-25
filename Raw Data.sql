@@ -31,16 +31,6 @@ match_mapping AS (
         ON sm.entity_id = mat.id AND sm.entity_type = 'match'
 ),
 
---PRE-FILTER LIVE-BET
-    sportsbook_data_v4 AS (SELECT *
-                                    FROM sisu_sportsbook.sportsbook_data_v3
-                                    WHERE selection_product = 'live_bet'
-                                    AND bonus_wallet_id IS NOT NULL
-                                    AND resulted_date BETWEEN
-                                        DATE_SUB(DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH), MONTH), INTERVAL 0 DAY) AND
-                                        LAST_DAY(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH))
-),
-
 --ATTACH ADDITIONAL GENIUS MAPPING REPORT DATA
     final as (
     SELECT sb.sport_name                                                           AS                       sport,
@@ -52,14 +42,16 @@ match_mapping AS (
                      sb.match_start_date                                           AS                       fixture_date,
                      'EUR'                                                         AS                       currency,
                      COUNT(DISTINCT sb.bet_id)                                     AS                       bet_count,
-                    SUM(COALESCE(attributed_won_amount_eur,0)) AS attributed_won_amount_eur,
+                    SUM(COALESCE(sb.attributed_bonus_wallet_win_amount_eur,0))     AS                       attributed_won_amount_eur,
                      SUM(sb.ggr_live_bet_eur)                                      AS                       ggr_live_bet_eur,
+--                     COALESCE(SUM(lbb.attributed_bonus_cost),0)                     AS                      attributed_bonus_cost,
                      COUNT(DISTINCT
                     CASE WHEN sb.bet_status in ('pushed', 'cancelled') THEN sb.bet_id ELSE null END) void_count
-                FROM sportsbook_data_v4 sb
+                FROM sisu_sportsbook.sportsbook_data_v3 sb
                 INNER JOIN sport_mapping sm ON sb.sport_id = sm.sport_id
                        INNER JOIN league_mapping lm ON sb.league_id = lm.league_id
                        INNER JOIN match_mapping mm ON sb.match_id = mm.match_id
+                WHERE resulted_date between '2024-06-01' AND '2024-06-30'
               GROUP BY sb.sport_name,
                        sm.provider_entity_id,
                        sb.league_name,
@@ -68,4 +60,4 @@ match_mapping AS (
                        mm.provider_entity_id,
                        sb.match_start_date)
 
-select * from final
+select sum(ggr_live_bet_eur) from final;

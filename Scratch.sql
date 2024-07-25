@@ -1,29 +1,65 @@
 WITH
 
-    final_2 as (
+--PRE-FILTER LIVE-BET
+sportsbook_data_v4 AS
+                (
+                    SELECT *
+                    FROM sisu_sportsbook.sportsbook_data_v3
+                    WHERE selection_product = 'live_bet' AND
+                    resulted_date BETWEEN
+                    DATE_SUB(DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH), MONTH), INTERVAL 0 DAY) AND
+                    LAST_DAY(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH))
+                ),
 
-        SELECT * FROM sisu_revenue.genius_report_raw_data
-     ),
+
+--TO CONFIRM THAT THERE WAS A POSITIVE PAYOUT FOR THE USER AND THAT THE BONUS WALLET WAS UNLOCKED
+wallets_temp AS (
+                    SELECT wallet_id
+                    FROM sisu_dwh.fact_locked_bonus_transactions lbt
+                    WHERE lbt.wallet_is_active = false
+                    AND lbt.brand = 'EPICBET'
+                    GROUP BY wallet_id
+                    HAVING sum(COALESCE(bonus_locks_fulfilled_amount_eur, 0)) > 0
+                ),
 
 
-f3 as (
-SELECT 1 _sort, '€0 - €300,000' AS revenue_range,
-       15 AS revenue_share_perc,
-       CASE WHEN sum(ggr_live_bet_eur) BETWEEN 0 AND 300000 THEN sum(ggr_live_bet_eur) ELSE NULL END AS ggr
+--GET THE INITIAL ACTIVATION BONUS
+activation_bonus AS
+                (
+                    SELECT wallet_id,
+                        SUM(bonus_locks_activated_amount_eur) activation_bonus
+                    FROM sisu_dwh.fact_locked_bonus_transactions
+                    WHERE wallet_id IN (SELECT wallet_id FROM wallets_temp)
+                    GROUP BY wallet_id
+                ),
 
-FROM final_2
-UNION ALL
-SELECT 2 _sort,'€300,001 - €500,000' AS revenue_range,12 AS revenue_share_perc,
-       CASE WHEN sum(ggr_live_bet_eur) BETWEEN 300001 AND 500000 THEN sum(ggr_live_bet_eur) ELSE NULL END AS ggr
-FROM final_2
-UNION ALL
-SELECT 3 _sort, '€500,001 - €1,000,000' AS revenue_range,8 AS revenue_share_perc,
-       CASE WHEN sum(ggr_live_bet_eur) BETWEEN 500001 AND 1000000 THEN sum(ggr_live_bet_eur) ELSE NULL END AS ggr
-FROM final_2
-UNION ALL
-SELECT 4 _sort,'€1,000,001 +' AS revenue_range,5 AS revenue_share_perc,
-       CASE WHEN sum(ggr_live_bet_eur) > 1000000 THEN sum(ggr_live_bet_eur) ELSE NULL END AS ggr
-FROM final_2)
 
-     select _sort, revenue_range, revenue_share_perc, ggr, ggr * (revenue_share_perc / 100) revenue_share
-     from f3 order by _sort asc
+--TO GET SPORTSBOOK LIVE-BET WINNINGS FOR BONUS WALLET USERS
+sportsbook_live_bet_winnings AS
+                (
+                    SELECT
+                    bonus_wallet_id,
+                    SUM(attributed_won_amount_eur) AS bonus_wallet_winnings_sb_live_bet
+                    FROM sportsbook_data_v4
+                    GROUP BY bonus_wallet_id
+                ),
+
+
+semi AS         (
+
+                    --DOUBLE CHECK IF THE WALLET UNLOCK DATE IS WITHIN THE PERIOD!!!
+                    SELECT
+                    bonus_wallet_id,
+                    ab.activation_bonus,
+                    ABS(bonus_wallet_winnings_sb_live_bet) bonus_wallet_winnings,
+                    CASE
+                    WHEN ABS(bonus_wallet_winnings_sb_live_bet) > ABS(activation_bonus) THEN ABS(activation_bonus)
+                    ELSE ABS(bonus_wallet_winnings_sb_live_bet)                                                     END bonus_cost
+                    FROM wallets_temp wal
+                    INNER JOIN sportsbook_live_bet_winnings lbw ON wal.wallet_id = lbw.bonus_wallet_id
+                    INNER JOIN activation_bonus ab on wal.wallet_id = ab.wallet_id ORDER BY bonus_wallet_id asc
+                )
+,
+    final AS (SELECT * FROM semi)
+
+SELECT * FROM final;
